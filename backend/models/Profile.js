@@ -10,18 +10,19 @@ const imageSchema = new mongoose.Schema(
 
 const profileSchema = new mongoose.Schema(
   {
-    name:       { type: String, required: true, trim: true },
-    age:        { type: Number, required: true, min: 18, max: 80 },
-    gender:     { type: String, enum: ['Male', 'Female', 'Other'], required: true },
-    religion:   { type: String, trim: true, default: '' },
-    caste:      { type: String, trim: true, default: '' },
-    education:  { type: String, trim: true, default: '' },
-    occupation: { type: String, trim: true, default: '' },
-    location:   { type: String, trim: true, default: '' },
-    height:     { type: String, trim: true, default: '' },
-    about:      { type: String, trim: true, default: '' },
-    images:     { type: [imageSchema], default: [] },
-    isLiked:    { type: Boolean, default: false },
+    name:         { type: String, required: true, trim: true },
+    age:          { type: Number, required: true, min: 18, max: 80 },
+    gender:       { type: String, enum: ['Male', 'Female', 'Other'], required: true },
+    religion:     { type: String, trim: true, default: '' },
+    caste:        { type: String, trim: true, default: '' },
+    education:    { type: String, trim: true, default: '' },
+    occupation:   { type: String, trim: true, default: '' },
+    location:     { type: String, trim: true, default: '' },
+    height:       { type: String, trim: true, default: '' },
+    about:        { type: String, trim: true, default: '' },
+    images:       { type: [imageSchema], default: [] },
+    patrikaImage: { type: imageSchema, default: undefined },
+    isLiked:      { type: Boolean, default: false },
   },
   { timestamps: true }
 );

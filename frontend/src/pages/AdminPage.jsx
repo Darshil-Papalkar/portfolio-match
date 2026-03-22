@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchProfiles, deleteProfile, toggleLike } from '../services/api.js';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchProfiles, deleteProfile, toggleLike, isAbortError } from '../services/api.js';
 import ProfileForm from '../components/admin/ProfileForm.jsx';
 
 const fmt = (dateStr) =>
@@ -15,45 +15,66 @@ export default function AdminPage() {
   const [deletingId, setDeletingId] = useState(null);
   const [likingId, setLikingId] = useState(null);
   const [search, setSearch] = useState('');
+  const fetchAbortRef = useRef(null);
+  const mutationAbortRef = useRef(null);
 
   const loadProfiles = useCallback(async () => {
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = new AbortController();
+    const { signal } = fetchAbortRef.current;
     setLoading(true);
     try {
-      const data = await fetchProfiles(false);
-      setProfiles(data);
+      const data = await fetchProfiles(false, signal);
+      if (!signal.aborted) setProfiles(data);
+    } catch (err) {
+      if (!isAbortError(err) && !signal.aborted) {
+        // swallow silently — admin page shows stale data on error
+      }
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+  useEffect(() => {
+    loadProfiles();
+    return () => {
+      fetchAbortRef.current?.abort();
+      mutationAbortRef.current?.abort();
+    };
+  }, [loadProfiles]);
 
   const openAdd = () => { setEditProfile(null); setShowForm(true); };
   const openEdit = (p) => { setEditProfile(p); setShowForm(true); };
 
   const handleDelete = async (p) => {
     if (!window.confirm(`Delete "${p.name}"? All their photos will also be removed from S3.`)) return;
+    mutationAbortRef.current?.abort();
+    mutationAbortRef.current = new AbortController();
+    const { signal } = mutationAbortRef.current;
     setDeletingId(p._id);
     try {
-      await deleteProfile(p._id);
-      setProfiles((prev) => prev.filter((x) => x._id !== p._id));
-    } catch {
-      alert('Delete failed. Please try again.');
+      await deleteProfile(p._id, signal);
+      if (!signal.aborted) setProfiles((prev) => prev.filter((x) => x._id !== p._id));
+    } catch (err) {
+      if (!isAbortError(err)) alert('Delete failed. Please try again.');
     } finally {
-      setDeletingId(null);
+      if (!signal.aborted) setDeletingId(null);
     }
   };
 
   const handleToggleLike = async (p) => {
     if (likingId === p._id) return;
+    mutationAbortRef.current?.abort();
+    mutationAbortRef.current = new AbortController();
+    const { signal } = mutationAbortRef.current;
     setLikingId(p._id);
     try {
-      const { isLiked } = await toggleLike(p._id);
-      setProfiles((prev) => prev.map((x) => x._id === p._id ? { ...x, isLiked } : x));
-    } catch {
-      alert('Failed to update like status.');
+      const { isLiked } = await toggleLike(p._id, signal);
+      if (!signal.aborted) setProfiles((prev) => prev.map((x) => x._id === p._id ? { ...x, isLiked } : x));
+    } catch (err) {
+      if (!isAbortError(err)) alert('Failed to update like status.');
     } finally {
-      setLikingId(null);
+      if (!signal.aborted) setLikingId(null);
     }
   };
 
@@ -74,7 +95,7 @@ export default function AdminPage() {
   });
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-8">
+    <main className="max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-8">
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
@@ -131,7 +152,8 @@ export default function AdminPage() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[580px] text-sm">
               <thead className="bg-rose-50 border-b border-rose-100 text-xs uppercase tracking-wide">
                 <tr>
                   <th className="text-left px-5 py-3 text-gray-600 font-semibold">Profile</th>
@@ -170,7 +192,7 @@ export default function AdminPage() {
 
                     {/* Photos */}
                     <td className="px-4 py-3">
-                      <span className="bg-rose-100 text-rose-700 text-xs px-2.5 py-1 rounded-full font-medium">
+                      <span className="bg-rose-100 text-rose-700 text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap">
                         {p.images?.length ?? 0} photos
                       </span>
                     </td>
@@ -212,6 +234,7 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             {filtered.length === 0 && (
               <p className="text-center py-8 text-gray-400 text-sm">No profiles match your search.</p>

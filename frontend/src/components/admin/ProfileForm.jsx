@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { createProfile, updateProfile, deleteImage } from '../../services/api.js';
+import { useState, useEffect, useRef } from 'react';
+import { createProfile, updateProfile, deleteImage, uploadPatrika, deletePatrika, isAbortError } from '../../services/api.js';
+import LumaSpin from '../ui/LumaSpin.jsx';
 
 const TEXT_FIELDS = [
   { name: 'name',       label: 'Full Name',  type: 'text',   required: true,  span: 2 },
@@ -36,23 +37,38 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
   const [existingImages, setExistingImages] = useState([]);
   // Each pending upload: { id, file, preview }
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [existingPatrika, setExistingPatrika] = useState(null);
+  const [pendingPatrika, setPendingPatrika] = useState(null); // { file, preview }
+  const [deletingPatrika, setDeletingPatrika] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deletingKey, setDeletingKey] = useState(null);
   const [error, setError] = useState(null);
+  const submitAbortRef = useRef(null);
+  const deleteAbortRef = useRef(null);
 
   const isEdit = !!profile;
 
   useEffect(() => {
+    return () => {
+      submitAbortRef.current?.abort();
+      deleteAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     if (profile) {
-      const { name, age, gender, religion, caste, education, occupation, location, height, about, images } = profile;
+      const { name, age, gender, religion, caste, education, occupation, location, height, about, images, patrikaImage } = profile;
       const { heightFt, heightIn } = parseHeight(height);
       setForm({ name, age: String(age), gender, religion: religion || '', caste: caste || '', education: education || '', occupation: occupation || '', location: location || '', heightFt, heightIn, about: about || '' });
       setExistingImages(images || []);
+      setExistingPatrika(patrikaImage || null);
     } else {
       setForm(EMPTY);
       setExistingImages([]);
+      setExistingPatrika(null);
     }
     setPendingFiles([]);
+    setPendingPatrika(null);
   }, [profile]);
 
   const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
@@ -76,21 +92,56 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
     });
   };
 
+  const onPatrikaChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (pendingPatrika) URL.revokeObjectURL(pendingPatrika.preview);
+    setPendingPatrika({ file, preview: URL.createObjectURL(file) });
+    e.target.value = '';
+  };
+
+  const removePendingPatrika = () => {
+    if (pendingPatrika) URL.revokeObjectURL(pendingPatrika.preview);
+    setPendingPatrika(null);
+  };
+
+  const handleDeleteExistingPatrika = async () => {
+    if (!window.confirm('Remove the patrika image?')) return;
+    deleteAbortRef.current?.abort();
+    deleteAbortRef.current = new AbortController();
+    const { signal } = deleteAbortRef.current;
+    setDeletingPatrika(true);
+    try {
+      await deletePatrika(profile._id, signal);
+      if (!signal.aborted) setExistingPatrika(null);
+    } catch (err) {
+      if (!isAbortError(err)) alert('Failed to remove patrika. Try again.');
+    } finally {
+      if (!signal.aborted) setDeletingPatrika(false);
+    }
+  };
+
   const handleDeleteExisting = async (key) => {
     if (!window.confirm('Remove this photo?')) return;
+    deleteAbortRef.current?.abort();
+    deleteAbortRef.current = new AbortController();
+    const { signal } = deleteAbortRef.current;
     setDeletingKey(key);
     try {
-      await deleteImage(profile._id, key);
-      setExistingImages((prev) => prev.filter((img) => img.key !== key));
-    } catch {
-      alert('Failed to remove photo. Try again.');
+      await deleteImage(profile._id, key, signal);
+      if (!signal.aborted) setExistingImages((prev) => prev.filter((img) => img.key !== key));
+    } catch (err) {
+      if (!isAbortError(err)) alert('Failed to remove photo. Try again.');
     } finally {
-      setDeletingKey(null);
+      if (!signal.aborted) setDeletingKey(null);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    submitAbortRef.current?.abort();
+    submitAbortRef.current = new AbortController();
+    const { signal } = submitAbortRef.current;
     setSubmitting(true);
     setError(null);
     try {
@@ -100,23 +151,32 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
       fd.append('height', `${heightFt}'${heightIn}"`);
       pendingFiles.forEach(({ file }) => fd.append('images', file));
 
+      let savedProfile;
       if (isEdit) {
-        await updateProfile(profile._id, fd);
+        savedProfile = await updateProfile(profile._id, fd, signal);
       } else {
-        await createProfile(fd);
+        savedProfile = await createProfile(fd, signal);
       }
-      onSuccess?.();
+
+      // Upload patrika separately if one is pending
+      if (!signal.aborted && pendingPatrika) {
+        const pfd = new FormData();
+        pfd.append('patrika', pendingPatrika.file);
+        await uploadPatrika(savedProfile._id, pfd, signal);
+      }
+
+      if (!signal.aborted) onSuccess?.();
     } catch (err) {
-      setError(err.response?.data?.message || 'Something went wrong. Please try again.');
+      if (!isAbortError(err)) setError(err.response?.data?.message || 'Something went wrong. Please try again.');
     } finally {
-      setSubmitting(false);
+      if (!signal.aborted) setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="relative space-y-5">
       {/* Text fields grid */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {TEXT_FIELDS.map((field) => (
           <div key={field.name} className={field.span === 2 ? 'col-span-2' : ''}>
             <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
@@ -203,7 +263,7 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
           <span className="text-2xl">📷</span>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-600">Click to add photos</p>
-            <p className="text-xs text-gray-400">JPG, PNG, WebP · max 5 MB each · up to 10 files</p>
+            <p className="text-xs text-gray-400">JPG, PNG, WebP · max 10 MB each · up to 10 files</p>
           </div>
           <input type="file" multiple accept="image/*" onChange={onFileChange} className="hidden" />
         </label>
@@ -231,6 +291,64 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
         )}
       </div>
 
+      {/* Patrika / Kundali Image */}
+      <div>
+        <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+          Patrika / Kundali Image
+          <span className="ml-1 text-gray-400 normal-case font-normal">(1 image · used for compatibility matching)</span>
+        </p>
+
+        {/* Existing patrika (edit mode) */}
+        {isEdit && existingPatrika && !pendingPatrika && (
+          <div className="flex items-center gap-3 mb-2">
+            <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-amber-200 flex-shrink-0">
+              <img src={existingPatrika.url} alt="Patrika" className="w-full h-full object-cover" />
+            </div>
+            <div className="text-sm text-gray-600">
+              <p className="font-medium text-amber-700">Patrika uploaded ✓</p>
+              <button
+                type="button"
+                onClick={handleDeleteExistingPatrika}
+                disabled={deletingPatrika}
+                className="mt-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-40 underline"
+              >
+                {deletingPatrika ? 'Removing…' : 'Remove patrika'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Pending patrika preview */}
+        {pendingPatrika && (
+          <div className="flex items-center gap-3 mb-2">
+            <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-amber-200 flex-shrink-0 group">
+              <img src={pendingPatrika.preview} alt="Patrika preview" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={removePendingPatrika}
+                className="absolute top-0.5 right-0.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs leading-none shadow transition opacity-0 group-hover:opacity-100"
+                aria-label="Remove patrika"
+              >×</button>
+            </div>
+            <p className="text-xs text-gray-500">New patrika queued for upload</p>
+          </div>
+        )}
+
+        {/* File input */}
+        {!pendingPatrika && (
+          <label className="flex items-center gap-3 cursor-pointer border-2 border-dashed border-amber-200 rounded-xl p-3 hover:border-amber-400 transition-colors">
+            <span className="text-xl">📄</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-gray-600">
+                {isEdit && existingPatrika ? 'Replace patrika image' : 'Upload patrika image'}
+              </p>
+              <p className="text-xs text-gray-400">JPG, PNG · max 10 MB</p>
+            </div>
+            <input type="file" accept="image/*" onChange={onPatrikaChange} className="hidden" />
+          </label>
+        )}
+      </div>
+
       {error && (
         <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       )}
@@ -242,7 +360,7 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
           disabled={submitting}
           className="flex-1 bg-rose-600 text-white py-2.5 rounded-xl font-semibold hover:bg-rose-700 disabled:opacity-50 transition text-sm"
         >
-          {submitting ? 'Saving…' : isEdit ? 'Update Profile' : 'Create Profile'}
+          {isEdit ? 'Update Profile' : 'Create Profile'}
         </button>
         <button
           type="button"
@@ -252,6 +370,16 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
           Cancel
         </button>
       </div>
+
+      {/* Saving overlay */}
+      {submitting && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 rounded-xl bg-white/80 backdrop-blur-sm">
+          <LumaSpin size={60} />
+          <p className="text-sm font-semibold tracking-wide text-rose-600">
+            {isEdit ? 'Updating profile…' : 'Creating profile…'}
+          </p>
+        </div>
+      )}
     </form>
   );
 }

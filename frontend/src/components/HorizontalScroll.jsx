@@ -1,10 +1,24 @@
 import { useRef } from 'react';
+import { motion } from 'framer-motion';
 
-export default function HorizontalScroll({ title, subtitle, count, children, emptyMessage = 'No profiles found.' }) {
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
+};
+
+export default function HorizontalScroll({ title, subtitle, count, children, emptyMessage = 'No profiles found.', onScrollEnd }) {
   const ref = useRef(null);
 
   const scroll = (dir) => {
     if (ref.current) ref.current.scrollBy({ left: dir * 304, behavior: 'smooth' });
+  };
+
+  const handleScroll = (e) => {
+    const el = e.currentTarget;
+    // Fire when within one card-width (~304px) of the end
+    if (onScrollEnd && el.scrollWidth - el.scrollLeft - el.clientWidth < 320) {
+      onScrollEnd();
+    }
   };
 
   return (
@@ -12,7 +26,7 @@ export default function HorizontalScroll({ title, subtitle, count, children, emp
       {/* Section header */}
       <div className="flex items-end justify-between mb-4 px-1">
         <div>
-          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <h2 className="text-base sm:text-xl font-bold text-gray-800 flex items-center gap-2">
             {title}
             {count !== undefined && (
               <span className="text-xs font-normal bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">
@@ -42,16 +56,20 @@ export default function HorizontalScroll({ title, subtitle, count, children, emp
       </div>
 
       {/* Scrollable row */}
-      <div
+      <motion.div
         ref={ref}
-        className="flex gap-4 overflow-x-auto scrollbar-hide pb-3"
+        className="flex gap-4 overflow-x-auto scrollbar-hide py-3"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        onScroll={handleScroll}
       >
         {count === 0 ? (
           <p className="text-gray-400 text-sm py-8 px-2">{emptyMessage}</p>
         ) : (
           children
         )}
-      </div>
+      </motion.div>
     </section>
   );
 }

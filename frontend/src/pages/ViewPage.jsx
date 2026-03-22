@@ -1,27 +1,66 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchProfiles } from '../services/api.js';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchProfiles, isAbortError } from '../services/api.js';
 import ProfileCard from '../components/ProfileCard.jsx';
 import HorizontalScroll from '../components/HorizontalScroll.jsx';
+import AnimatedLoadingSkeleton from '../components/ui/AnimatedLoadingSkeleton.jsx';
+import { TextRoll } from '../components/ui/TextRoll.jsx';
+
+const TITLE_WORDS = ['Find', 'Your', 'Perfect', 'Match'];
+
+// Per-word char offsets so delays flow as one continuous sentence
+const WORD_OFFSETS = TITLE_WORDS.reduce((acc, _word, i) => {
+  acc.push(i === 0 ? 0 : acc[i - 1] + TITLE_WORDS[i - 1].length + 1);
+  return acc;
+}, []);
+
+const RollingTitle = () => (
+  <h1 className="text-2xl sm:text-4xl font-bold text-rose-700 mb-2 flex flex-wrap justify-center gap-x-[0.3em] gap-y-1">
+    {TITLE_WORDS.map((word, wi) => (
+      <span key={word} className="whitespace-nowrap">
+        <TextRoll
+          getEnterDelay={(i) => (WORD_OFFSETS[wi] + i) * 0.1}
+          getExitDelay={(i) => (WORD_OFFSETS[wi] + i) * 0.1 + 0.2}
+        >
+          {word}
+        </TextRoll>
+      </span>
+    ))}
+  </h1>
+);
+
+// card width (w-72 = 288) + gap-4 (16) = 304px per slot
+const CARD_SLOT = 304;
+const BATCH = 4;
+const initialVisible = () => Math.max(3, Math.ceil(Math.min(window.innerWidth, 1200) / CARD_SLOT) + 1);
 
 export default function ViewPage() {
   const [allProfiles, setAllProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [allVisible, setAllVisible] = useState(initialVisible);
+  const [likedVisible, setLikedVisible] = useState(initialVisible);
+  const abortRef = useRef(null);
 
   const load = useCallback(async () => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const { signal } = abortRef.current;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchProfiles(false);
-      setAllProfiles(data);
-    } catch {
-      setError('Failed to load profiles. Please try again.');
+      const data = await fetchProfiles(false, signal);
+      if (!signal.aborted) setAllProfiles(data);
+    } catch (err) {
+      if (!isAbortError(err)) setError('Failed to load profiles. Please try again.');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => abortRef.current?.abort();
+  }, [load]);
 
   // Update local liked state after toggle without re-fetching
   const handleLikeToggle = useCallback((id, isLiked) => {
@@ -32,14 +71,18 @@ export default function ViewPage() {
 
   const likedProfiles = allProfiles.filter((p) => p.isLiked);
 
+  const visibleAll   = allProfiles.slice(0, allVisible);
+  const visibleLiked = likedProfiles.slice(0, likedVisible);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="flex flex-col items-center gap-3 text-rose-600">
-          <div className="w-10 h-10 border-4 border-rose-200 border-t-rose-600 rounded-full animate-spin" />
-          <span className="text-sm font-medium">Loading profiles…</span>
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-8">
+        <div className="text-center mb-6 sm:mb-10">
+          <RollingTitle />
+          <p className="text-gray-500">Browse verified profiles and connect with your soulmate</p>
         </div>
-      </div>
+        <AnimatedLoadingSkeleton />
+      </main>
     );
   }
 
@@ -61,7 +104,7 @@ export default function ViewPage() {
     <main className="max-w-7xl mx-auto px-6 py-8">
       {/* Hero banner */}
       <div className="text-center mb-10">
-        <h1 className="text-4xl font-bold text-rose-700 mb-2">Find Your Perfect Match</h1>
+        <RollingTitle />
         <p className="text-gray-500">Browse verified profiles and connect with your soulmate</p>
       </div>
 
@@ -71,8 +114,9 @@ export default function ViewPage() {
           title="❤️ Liked Profiles"
           subtitle="Profiles you've shown interest in"
           count={likedProfiles.length}
+          onScrollEnd={() => setLikedVisible((n) => Math.min(n + BATCH, likedProfiles.length))}
         >
-          {likedProfiles.map((profile) => (
+          {visibleLiked.map((profile) => (
             <ProfileCard
               key={profile._id}
               profile={profile}
@@ -88,8 +132,9 @@ export default function ViewPage() {
         subtitle="Sorted by latest activity"
         count={allProfiles.length}
         emptyMessage="No profiles yet. Check back soon!"
+        onScrollEnd={() => setAllVisible((n) => Math.min(n + BATCH, allProfiles.length))}
       >
-        {allProfiles.map((profile) => (
+        {visibleAll.map((profile) => (
           <ProfileCard
             key={profile._id}
             profile={profile}

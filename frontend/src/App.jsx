@@ -1,41 +1,35 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Home, Heart, ShieldCheck } from 'lucide-react';
+import { AnimeNavBar } from './components/ui/AnimeNavbar.jsx';
 import ViewPage from './pages/ViewPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
+import MatchPage from './pages/MatchPage.jsx';
 
-function Navbar() {
-  const { pathname } = useLocation();
+const NAV_ITEMS = [
+  { name: 'Browse', url: '/', icon: Home },
+  { name: 'Match',  url: '/match', icon: Heart },
+  { name: 'Admin',  url: '/admin', icon: ShieldCheck },
+];
+
+function Layout() {
   return (
-    <nav className="bg-rose-700 text-white px-6 py-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
-      <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-wide">
-        <span className="text-2xl">💍</span>
-        <span>MatriMatch</span>
-      </Link>
-      <div className="flex items-center gap-4">
-        <Link
-          to="/"
-          className={`text-sm font-medium transition-colors ${pathname === '/' ? 'text-white underline underline-offset-4' : 'text-rose-200 hover:text-white'}`}
-        >
-          Browse Profiles
-        </Link>
-        <Link
-          to="/admin"
-          className={`text-sm font-semibold px-4 py-1.5 rounded-full border border-white/40 transition-colors ${pathname === '/admin' ? 'bg-white text-rose-700' : 'hover:bg-white/10'}`}
-        >
-          Admin Portal
-        </Link>
+    <>
+      <AnimeNavBar items={NAV_ITEMS} />
+      <div className="pt-32 sm:pt-36 md:pt-40">
+        <Routes>
+          <Route path="/" element={<ViewPage />} />
+          <Route path="/match" element={<MatchPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+        </Routes>
       </div>
-    </nav>
+    </>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Navbar />
-      <Routes>
-        <Route path="/" element={<ViewPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-      </Routes>
+      <Layout />
     </BrowserRouter>
   );
 }
