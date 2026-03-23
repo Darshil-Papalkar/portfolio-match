@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createProfile, updateProfile, deleteImage, uploadPatrika, deletePatrika, isAbortError } from '../../services/api.js';
 import LumaSpin from '../ui/LumaSpin.jsx';
+import { DatetimePicker } from '../ui/DatetimePicker.jsx';
 
 const TEXT_FIELDS = [
   { name: 'name',       label: 'Full Name',  type: 'text',   required: true,  span: 2 },
@@ -24,10 +25,25 @@ const parseHeight = (h) => {
   return m ? { heightFt: m[1], heightIn: m[2] } : { heightFt: '5', heightIn: '0' };
 };
 
+// Build a Date from stored "YYYY-MM-DD" + "HH:MM:SS AM" strings
+const buildBirthDateTime = (dob, tob) => {
+  if (!dob) return null;
+  const base = new Date(`${dob}T00:00:00`);
+  if (tob) {
+    const [timePart, ampm] = tob.split(' ');
+    let [h, m, s] = (timePart || '').split(':').map(Number);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    base.setHours(h, m || 0, s || 0, 0);
+  }
+  return base;
+};
+
 const EMPTY = {
   name: '', age: '', gender: 'Male',
   religion: '', caste: '', education: '',
   occupation: '', location: '', heightFt: '5', heightIn: '0', about: '',
+  birthLocation: '',
 };
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 bg-white';
@@ -40,6 +56,10 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
   const [existingPatrika, setExistingPatrika] = useState(null);
   const [pendingPatrika, setPendingPatrika] = useState(null); // { file, preview }
   const [deletingPatrika, setDeletingPatrika] = useState(false);
+  const [birthDateTime, setBirthDateTime] = useState(
+    () => profile ? buildBirthDateTime(profile.dateOfBirth, profile.timeOfBirth) : null
+  );
+  const birthPickerRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingKey, setDeletingKey] = useState(null);
   const [error, setError] = useState(null);
@@ -57,13 +77,15 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
 
   useEffect(() => {
     if (profile) {
-      const { name, age, gender, religion, caste, education, occupation, location, height, about, images, patrikaImage } = profile;
+      const { name, age, gender, religion, caste, education, occupation, location, height, about, dateOfBirth, timeOfBirth, birthLocation, images, patrikaImage } = profile;
       const { heightFt, heightIn } = parseHeight(height);
-      setForm({ name, age: String(age), gender, religion: religion || '', caste: caste || '', education: education || '', occupation: occupation || '', location: location || '', heightFt, heightIn, about: about || '' });
+      setForm({ name, age: String(age), gender, religion: religion || '', caste: caste || '', education: education || '', occupation: occupation || '', location: location || '', heightFt, heightIn, about: about || '', birthLocation: birthLocation || '' });
+      setBirthDateTime(buildBirthDateTime(dateOfBirth, timeOfBirth));
       setExistingImages(images || []);
       setExistingPatrika(patrikaImage || null);
     } else {
       setForm(EMPTY);
+      setBirthDateTime(null);
       setExistingImages([]);
       setExistingPatrika(null);
     }
@@ -149,6 +171,20 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
       const { heightFt, heightIn, ...rest } = form;
       Object.entries(rest).forEach(([k, v]) => fd.append(k, v));
       fd.append('height', `${heightFt}'${heightIn}"`);
+      // Prefer the live picker value; fall back to birthDateTime state (edit pre-fill)
+      const bd = birthPickerRef.current?.getDate() ?? birthDateTime;
+      if (bd && !isNaN(bd)) {
+        const y  = bd.getFullYear();
+        const mo = String(bd.getMonth() + 1).padStart(2, '0');
+        const dy = String(bd.getDate()).padStart(2, '0');
+        fd.append('dateOfBirth', `${y}-${mo}-${dy}`);
+        let h    = bd.getHours();
+        const ap = h >= 12 ? 'PM' : 'AM';
+        h        = h % 12 || 12;
+        const mi = String(bd.getMinutes()).padStart(2, '0');
+        const se = String(bd.getSeconds()).padStart(2, '0');
+        fd.append('timeOfBirth', `${String(h).padStart(2, '0')}:${mi}:${se} ${ap}`);
+      }
       pendingFiles.forEach(({ file }) => fd.append('images', file));
 
       let savedProfile;
@@ -215,6 +251,39 @@ export default function ProfileForm({ profile, onSuccess, onCancel }) {
             </select>
           </div>
           <p className="text-xs text-gray-400 mt-1">Selected height: <span className="font-medium text-gray-600">{form.heightFt}'{form.heightIn}"</span></p>
+        </div>
+
+        {/* Date & Time of Birth / Birth Location — single row */}
+        <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          {/* Date + Time picker (timescape) */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Date &amp; Time of Birth</label>
+            <DatetimePicker
+              key={profile?._id || 'new'}
+              ref={birthPickerRef}
+              value={birthDateTime || undefined}
+              onChange={setBirthDateTime}
+              format={[['months', 'days', 'years'], ['hours', 'minutes', 'am/pm']]}
+            />
+            <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+              Click a field to select it, then <span className="font-medium text-gray-500">type digits</span> or use <span className="font-medium text-gray-500">↑ ↓ arrow keys</span> to change the value.
+            </p>
+          </div>
+
+          {/* Birth Location */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Birth Location</label>
+            <input
+              type="text"
+              name="birthLocation"
+              value={form.birthLocation}
+              onChange={onChange}
+              placeholder="City, State"
+              className={inputCls}
+            />
+          </div>
+
         </div>
 
         {/* About — full width textarea */}

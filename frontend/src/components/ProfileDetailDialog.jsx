@@ -229,8 +229,11 @@ export default function ProfileDetailDialog({ profile, onClose }) {
                     ? `${profile.religion}${profile.caste ? ` · ${profile.caste}` : ''}`
                     : null}
                 />
-                <DetailRow label="Education" value={profile.education} />
-                <DetailRow label="Location"  value={profile.location} />
+                <DetailRow label="Education"  value={profile.education} />
+                <DetailRow label="Location"   value={profile.location} />
+                <DetailRow label="Born"        value={profile.dateOfBirth} />
+                <DetailRow label="Birth Time"  value={profile.timeOfBirth} />
+                <DetailRow label="Birth Place" value={profile.birthLocation} />
               </motion.div>
 
               {/* Bio */}

@@ -21,15 +21,18 @@ const getS3ImageBuffer = async (key) => {
 };
 
 const SYSTEM_PROMPT = `You are a highly knowledgeable Vedic astrologer specializing in Kundali matching (Vivah Milan / Kundali Milan).
-You will be given two horoscope chart images (patrika / janampatri / kundali). The charts may be in Marathi, Hindi, Sanskrit, or English.
+You will be given two horoscope chart images (patrika / janampatri / kundali) together with structured profile data for each person. The charts may be in Marathi, Hindi, Sanskrit, or English.
 
-For EACH chart, carefully extract:
-- Name (if printed on chart)
-- Date of Birth, Time of Birth, Place of Birth (if visible)
-- Rashi (Moon Sign / Chandra Rashi)
-- Nakshatra (birth star) and Pada (quarter)
-- Lagna (Ascendant / Rising sign)
-- Positions of all 9 Grahas (Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Ketu) in their respective houses
+The structured profile data (Name, Date of Birth, Time of Birth, Place of Birth, Religion, Caste, etc.) provided by the administrator is ALWAYS the primary and authoritative source. Always use it first. The patrika image is a secondary visual reference — use it only to extract planetary positions, house placements, Rashi, Nakshatra, and Lagna that cannot be derived from text alone. If the patrika image shows different birth details (DOB, TOB, POB) than the structured data, ALWAYS prefer the structured data. Never override or second-guess the structured data with what is printed on the chart. Religion, caste, education, and occupation provide important socio-cultural context for the analysis.
+
+For EACH profile:
+1. Take Name, Date of Birth, Time of Birth, and Place of Birth directly from the structured data — do not read these from the chart image.
+2. Use the chart image to determine:
+   - Rashi (Moon Sign / Chandra Rashi)
+   - Nakshatra (birth star) and Pada (quarter)
+   - Lagna (Ascendant / Rising sign)
+   - Positions of all 9 Grahas (Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu, Ketu) in their respective houses
+3. If the chart image is unclear or missing any planetary data, compute it from the structured DOB/TOB/POB and note the estimation.
 
 Then perform the Ashtakoot Milan (36-point compatibility analysis):
 1. Varna (1 point max)
@@ -95,6 +98,22 @@ IMPORTANT: Respond ONLY with valid JSON matching this exact schema (no markdown,
 
 Allowed recommendation values: "HIGHLY_RECOMMENDED", "RECOMMENDED", "AVERAGE", "NOT_RECOMMENDED"`;
 
+// Build a concise text summary of a profile's form data for the AI prompt
+const buildProfileContext = (p) => {
+  const lines = [`Name: ${p.name}`];
+  if (p.dateOfBirth)   lines.push(`Date of Birth: ${p.dateOfBirth}`);
+  if (p.timeOfBirth)   lines.push(`Time of Birth: ${p.timeOfBirth}`);
+  if (p.birthLocation) lines.push(`Place of Birth: ${p.birthLocation}`);
+  if (p.age)           lines.push(`Age: ${p.age}`);
+  if (p.gender)        lines.push(`Gender: ${p.gender}`);
+  if (p.religion)      lines.push(`Religion: ${p.religion}`);
+  if (p.caste)         lines.push(`Caste/Gotra: ${p.caste}`);
+  if (p.education)     lines.push(`Education: ${p.education}`);
+  if (p.occupation)    lines.push(`Occupation: ${p.occupation}`);
+  if (p.location)      lines.push(`Current Location: ${p.location}`);
+  return lines.join('\n');
+};
+
 const detectMimeType = (key) => {
   if (/\.png$/i.test(key)) return 'image/png';
   if (/\.webp$/i.test(key)) return 'image/webp';
@@ -146,6 +165,10 @@ export const matchProfiles = async (req, res) => {
           role: 'user',
           content: [
             {
+              type: 'text',
+              text: `=== Profile A — Structured Data ===\n${buildProfileContext(profileA)}\n\nThe patrika (horoscope chart) for Profile A follows. Use the structured data above as the authoritative reference for birth details when reading the chart.`,
+            },
+            {
               type: 'image',
               source: {
                 type: 'base64',
@@ -155,7 +178,7 @@ export const matchProfiles = async (req, res) => {
             },
             {
               type: 'text',
-              text: `This is the patrika (horoscope chart) of ${profileA.name} (Profile A).`,
+              text: `=== Profile B — Structured Data ===\n${buildProfileContext(profileB)}\n\nThe patrika (horoscope chart) for Profile B follows. Use the structured data above as the authoritative reference for birth details when reading the chart.`,
             },
             {
               type: 'image',
@@ -167,7 +190,7 @@ export const matchProfiles = async (req, res) => {
             },
             {
               type: 'text',
-              text: `This is the patrika (horoscope chart) of ${profileB.name} (Profile B). Now analyze both charts and return the full compatibility report as JSON.\n\nIMPORTANT: Write all narrative text fields — the "summary" field and every "details" value inside "ashtakoot" and "mangal_dosha" — in ${languageName}. All JSON field names and keys must remain in English.`,
+              text: `Now analyze both profiles using the structured data and patrika charts above, and return the full compatibility report as JSON.\n\nIMPORTANT: Write all narrative text fields — the "summary" field and every "details" value inside "ashtakoot" and "mangal_dosha" — in ${languageName}. All JSON field names and keys must remain in English.`,
             },
           ],
         },
@@ -185,9 +208,15 @@ export const matchProfiles = async (req, res) => {
     const jsonText = textBlock.text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
     const report = JSON.parse(jsonText);
 
-    // Attach profile metadata
+    // Fill in profile metadata from form data when the AI left fields blank
     report.profileA.name = report.profileA.name || profileA.name;
+    report.profileA.dob  = report.profileA.dob  || profileA.dateOfBirth  || '';
+    report.profileA.tob  = report.profileA.tob  || profileA.timeOfBirth  || '';
+    report.profileA.pob  = report.profileA.pob  || profileA.birthLocation || '';
     report.profileB.name = report.profileB.name || profileB.name;
+    report.profileB.dob  = report.profileB.dob  || profileB.dateOfBirth  || '';
+    report.profileB.tob  = report.profileB.tob  || profileB.timeOfBirth  || '';
+    report.profileB.pob  = report.profileB.pob  || profileB.birthLocation || '';
 
     res.json(report);
   } catch (err) {

@@ -36,6 +36,13 @@ body {
   100% { transform: translateX(-100%); }
 }
 
+/* ── react-day-picker rose theme ──────────────────────────────── */
+.day-sel .cal-btn                       { background-color: #e11d48; color: #fff; }
+.day-sel .cal-btn:hover                 { background-color: #be123c; }
+.day-tod:not(.day-sel) .cal-btn        { color: #e11d48; font-weight: 600; }
+.day-out .cal-btn                       { color: #d1d5db; }
+.day-dis .cal-btn                       { color: #e5e7eb; pointer-events: none; cursor: not-allowed; }
+
 @keyframes loaderAnim {
   0%    { inset: 0 35px 35px 0; }
   12.5% { inset: 0 35px 0 0; }

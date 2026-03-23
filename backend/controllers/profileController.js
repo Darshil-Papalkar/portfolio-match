@@ -3,7 +3,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import s3Client from '../config/s3.js';
 import Profile from '../models/Profile.js';
 
-const PROFILE_FIELDS = ['name', 'age', 'gender', 'religion', 'caste', 'education', 'occupation', 'location', 'height', 'about'];
+const PROFILE_FIELDS = ['name', 'age', 'gender', 'religion', 'caste', 'education', 'occupation', 'location', 'height', 'about', 'dateOfBirth', 'timeOfBirth', 'birthLocation'];
 const PRESIGN_TTL = 60 * 60; // 1 hour
 
 const deleteS3Object = (key) =>

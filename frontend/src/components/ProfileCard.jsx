@@ -17,6 +17,20 @@ const Tag = ({ children }) => (
   </span>
 );
 
+// "YYYY-MM-DD" → "15 Mar 2000"
+const formatDob = (dob) => {
+  if (!dob) return null;
+  return new Date(`${dob}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+// "10:30:45 AM" → "10:30 AM"
+const formatTime = (t) => {
+  if (!t) return null;
+  const [tp, ap] = t.split(' ');
+  const [h, m] = (tp || '').split(':');
+  return `${h}:${m} ${ap}`;
+};
+
 export default function ProfileCard({ profile, onLikeToggle }) {
   const [liked, setLiked] = useState(profile.isLiked);
   const [busy, setBusy] = useState(false);
@@ -148,10 +162,13 @@ export default function ProfileCard({ profile, onLikeToggle }) {
 
           {/* Info chips */}
           <div className="flex flex-wrap gap-1.5">
-            {profile.location   && <Tag>📍 {profile.location}</Tag>}
-            {profile.religion   && <Tag>🙏 {profile.religion}{profile.caste ? ` · ${profile.caste}` : ''}</Tag>}
-            {profile.education  && <Tag>🎓 {profile.education}</Tag>}
-            {profile.occupation && <Tag>💼 {profile.occupation}</Tag>}
+            {profile.location      && <Tag>📍 {profile.location}</Tag>}
+            {profile.religion      && <Tag>🙏 {profile.religion}{profile.caste ? ` · ${profile.caste}` : ''}</Tag>}
+            {profile.education     && <Tag>🎓 {profile.education}</Tag>}
+            {profile.occupation    && <Tag>💼 {profile.occupation}</Tag>}
+            {profile.dateOfBirth   && <Tag>🎂 {formatDob(profile.dateOfBirth)}</Tag>}
+            {profile.timeOfBirth   && <Tag>⏰ {formatTime(profile.timeOfBirth)}</Tag>}
+            {profile.birthLocation && <Tag>🏡 {profile.birthLocation}</Tag>}
           </div>
 
           {/* View details CTA */}

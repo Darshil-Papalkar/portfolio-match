@@ -14,9 +14,11 @@
     "matrimonial-portal": "file:..",
     "motion": "^12.38.0",
     "react": "^18.3.1",
+    "react-day-picker": "^9.14.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.1",
-    "styled-components": "^6.3.12"
+    "styled-components": "^6.3.12",
+    "timescape": "^0.8.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",
